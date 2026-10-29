@@ -1,0 +1,62 @@
+name: recondesk
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: recondesk
+      POSTGRES_USER: recondesk
+      POSTGRES_PASSWORD: ${RECON_DB_PASSWORD:?Run scripts/Init.ps1 first}
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=30"]
+    ports: ["127.0.0.1:5446:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recondesk -d recondesk"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+    security_opt: ["no-new-privileges:true"]
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      RECON_DB_URL: jdbc:postgresql://db:5432/recondesk
+      RECON_DB_USER: recondesk
+      RECON_DB_PASSWORD: ${RECON_DB_PASSWORD:?Run scripts/Init.ps1 first}
+      RECON_DEMO_PASSWORD: ${RECON_DEMO_PASSWORD:?Run scripts/Init.ps1 first}
+      RECON_APP_ORIGIN: ${RECON_APP_ORIGIN:-http://127.0.0.1:8096}
+      RECON_COOKIE_SECURE: ${RECON_COOKIE_SECURE:-false}
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx256m -XX:MaxMetaspaceSize=144m -XX:ReservedCodeCacheSize=64m -Xss512k
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/health"]
+      interval: 5s
+      timeout: 4s
+      start_period: 40s
+      retries: 30
+    mem_limit: 512m
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports: ["127.0.0.1:8096:8080"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+volumes:
+  postgres_data:

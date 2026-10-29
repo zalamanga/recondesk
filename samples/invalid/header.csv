@@ -1,0 +1,2 @@
+transaction_id,date,amount,currency
+DEMO-BAD-HEADER,2026-01-15,10.00,USD
